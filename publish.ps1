@@ -74,13 +74,72 @@ Write-Host "同步完成！" -ForegroundColor Green
 Write-Host ""
 
 # ==========================================
-# [2/5] 保留 Canvas 原始圖片節點
+# [2/5] 修正 Quartz Canvas 檔案路徑
 # ==========================================
 
-Write-Host "[2/5] 保留 Canvas 原始 file 圖片節點..." -ForegroundColor Cyan
+Write-Host "[2/5] 修正 Quartz Canvas 路徑..." -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Canvas 圖片節點不需要轉換。" -ForegroundColor Green
-Write-Host ""
+
+$VaultFolderName = Split-Path $Destination -Leaf
+$CanvasFiles = @(Get-ChildItem $Destination -Recurse -File -Filter "*.canvas")
+
+foreach ($CanvasFile in $CanvasFiles) {
+
+    Write-Host "處理：$($CanvasFile.Name)" -ForegroundColor Gray
+
+    try {
+
+        $Canvas = Get-Content $CanvasFile.FullName -Raw -Encoding UTF8 |
+            ConvertFrom-Json
+
+        $CanvasChanged = $false
+
+        foreach ($Node in $Canvas.nodes) {
+
+            if ($Node.type -eq "file" -and $Node.file) {
+
+                $OriginalPath = $Node.file -replace '\\', '/'
+                $Prefix = "$VaultFolderName/"
+
+                if (-not $OriginalPath.StartsWith($Prefix)) {
+
+                    $Node.file = "$Prefix$OriginalPath"
+                    $CanvasChanged = $true
+
+                    Write-Host "  $OriginalPath" -ForegroundColor Yellow
+                    Write-Host "  -> $($Node.file)" -ForegroundColor Green
+                }
+            }
+        }
+
+        if ($CanvasChanged) {
+
+            $CanvasJson = $Canvas | ConvertTo-Json -Depth 100
+            $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+            [System.IO.File]::WriteAllText(
+                $CanvasFile.FullName,
+                $CanvasJson,
+                $Utf8NoBom
+            )
+
+            Write-Host "  Canvas 路徑修正完成。" -ForegroundColor Green
+        }
+        else {
+
+            Write-Host "  不需要修改。" -ForegroundColor DarkGray
+        }
+    }
+    catch {
+
+        Write-Host "Canvas 處理失敗：" -ForegroundColor Red
+        Write-Host $CanvasFile.FullName -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ""
+}
 
 # ==========================================
 # [3/5] 偵測 Git 變更
