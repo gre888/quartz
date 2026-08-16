@@ -16,6 +16,10 @@ $Destination = "$QuartzPath\content\vault_python_20260816"
 
 $SiteUrl = "https://gre888.github.io/quartz/"
 
+$Repo = "gre888/quartz"
+
+$WorkflowName = "Deploy Quartz to GitHub Pages"
+
 # ==========================================
 # 標題
 # ==========================================
@@ -27,7 +31,7 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ==========================================
-# 確認 Quartz
+# 確認路徑
 # ==========================================
 
 if (-not (Test-Path $QuartzPath)) {
@@ -36,10 +40,6 @@ if (-not (Test-Path $QuartzPath)) {
     Write-Host $QuartzPath
     exit 1
 }
-
-# ==========================================
-# 確認 Obsidian Vault
-# ==========================================
 
 if (-not (Test-Path $Source)) {
 
@@ -77,15 +77,9 @@ Write-Host ""
 Write-Host "[2/4] 偵測變更..." -ForegroundColor Cyan
 Write-Host ""
 
-# 加入 staging
 git add -A
 
-# 取得變更
 $Changes = @(git status --short)
-
-# ==========================================
-# 沒有變更
-# ==========================================
 
 if ($Changes.Count -eq 0) {
 
@@ -147,16 +141,11 @@ $Confirm = Read-Host "是否發布？ [Y/N]"
 
 Write-Host ""
 
-# ==========================================
-# 使用者選擇 N
-# ==========================================
-
 if ($Confirm -notmatch '^[Yy]$') {
 
     Write-Host "取消發布。" -ForegroundColor Yellow
     Write-Host ""
 
-    # 自動取消 staging
     git restore --staged .
 
     Write-Host "已自動取消 Git Staging。" -ForegroundColor Green
@@ -168,7 +157,7 @@ if ($Confirm -notmatch '^[Yy]$') {
 }
 
 # ==========================================
-# [3/4] Commit
+# Commit
 # ==========================================
 
 Write-Host "[3/4] 建立 Git Commit..." -ForegroundColor Cyan
@@ -205,25 +194,159 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Commit 已建立，但尚未成功 Push。" -ForegroundColor Yellow
     Write-Host ""
+
     exit 1
 }
 
-# ==========================================
-# 完成
-# ==========================================
-
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Green
-Write-Host "          發布完成！" -ForegroundColor Green
-Write-Host "==========================================" -ForegroundColor Green
+Write-Host "GitHub Push 成功！" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "GitHub Actions 正在自動建立 Quartz 網站。" -ForegroundColor Cyan
+# ==========================================
+# GitHub Actions 狀態
+# ==========================================
+
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "       GitHub Actions 部署狀態" -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
+
+# ------------------------------------------
+# 檢查 GitHub CLI
+# ------------------------------------------
+
+$GhCommand = Get-Command gh -ErrorAction SilentlyContinue
+
+if ($null -eq $GhCommand) {
+
+    Write-Host "找不到 GitHub CLI (gh)。" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "因此無法在 PowerShell 中直接取得 Actions 狀態。" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "請手動查看：" -ForegroundColor Cyan
+    Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
+    Write-Host ""
+
+    Start-Process $SiteUrl
+
+    Write-Host "已開啟網站。" -ForegroundColor Green
+    Write-Host ""
+
+    exit 0
+}
+
+# ------------------------------------------
+# 等待 GitHub Actions 建立
+# ------------------------------------------
+
+Write-Host "等待 GitHub Actions 啟動..." -ForegroundColor Cyan
+Write-Host ""
+
+$RunId = $null
+
+for ($i = 1; $i -le 15; $i++) {
+
+    $Run = gh run list `
+        --repo $Repo `
+        --workflow "$WorkflowName" `
+        --branch main `
+        --limit 1 `
+        --json databaseId,headSha,status,conclusion `
+        --jq '.[0]'
+
+    if ($LASTEXITCODE -eq 0 -and $Run) {
+
+        try {
+
+            $RunObject = $Run | ConvertFrom-Json
+
+            if ($RunObject.headSha -eq (git rev-parse HEAD)) {
+
+                $RunId = $RunObject.databaseId
+                break
+            }
+
+        }
+        catch {
+        }
+    }
+
+    Start-Sleep -Seconds 2
+}
+
+# ------------------------------------------
+# 找不到 Actions
+# ------------------------------------------
+
+if ($null -eq $RunId) {
+
+    Write-Host "無法取得最新 GitHub Actions Run。" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "請手動查看：" -ForegroundColor Cyan
+    Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
+    Write-Host ""
+
+    Start-Process $SiteUrl
+
+    exit 0
+}
+
+# ------------------------------------------
+# 顯示 Run ID
+# ------------------------------------------
+
+Write-Host "GitHub Actions Run ID：" -ForegroundColor Cyan
+Write-Host $RunId -ForegroundColor White
+Write-Host ""
+
+Write-Host "正在等待 Quartz 部署完成..." -ForegroundColor Cyan
+Write-Host ""
+
+# ------------------------------------------
+# Watch Actions
+# ------------------------------------------
+
+gh run watch $RunId `
+    --repo $Repo `
+    --compact `
+    --exit-status
+
+$ActionsResult = $LASTEXITCODE
+
+Write-Host ""
+Write-Host "==========================================" -ForegroundColor Cyan
+
+if ($ActionsResult -eq 0) {
+
+    Write-Host "       GitHub Actions：成功 ✓" -ForegroundColor Green
+    Write-Host "       Quartz：部署完成 ✓" -ForegroundColor Green
+
+}
+else {
+
+    Write-Host "       GitHub Actions：失敗 ✗" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "請查看 Actions 詳細錯誤：" -ForegroundColor Yellow
+    Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
+}
+
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# ==========================================
+# 自動開啟網站
+# ==========================================
 
 Write-Host "網站：" -ForegroundColor Cyan
 Write-Host $SiteUrl -ForegroundColor White
 Write-Host ""
 
-Write-Host "請等待 GitHub Actions 完成後重新整理網站。" -ForegroundColor DarkGray
+Write-Host "正在開啟網站..." -ForegroundColor Cyan
+
+Start-Process $SiteUrl
+
+Write-Host ""
+Write-Host "==========================================" -ForegroundColor Green
+Write-Host "          發布流程完成！" -ForegroundColor Green
+Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
