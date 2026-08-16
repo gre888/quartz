@@ -119,7 +119,7 @@ else {
                     $Node.file -match '\.(png|jpg|jpeg|gif|webp)$'
                 ) {
 
-                    $ImagePath = (($Node.file -replace '\\', '/') -split '/' | ForEach-Object { [System.Uri]::EscapeDataString($_) }) -join '/'
+                    $ImagePath = $Node.file -replace '\\', '/'
 
                     $Node.type = "text"
                     $Node.PSObject.Properties.Remove("file")
