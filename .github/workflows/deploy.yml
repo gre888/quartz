@@ -35,6 +35,14 @@ jobs:
       - name: Build Quartz
         run: npx quartz build
 
+      - name: Check Django Canvas output
+        run: |
+          echo "===== Django output ====="
+          find public -type f | grep -i "django" || true
+
+          echo "===== Canvas output ====="
+          find public -type f | grep -i "0816_canvas" || true
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
