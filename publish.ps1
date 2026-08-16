@@ -10,8 +10,9 @@
 # 3. 檢查 Git 工作目錄
 # 4. Git Pull
 # 5. Vault -> Quartz
-# 5.5 Canvas 圖片 / PDF 路徑轉換
+# 5.5 暫時轉換 Canvas 圖片 / PDF 路徑
 # 6. 清除 public + Quartz Build
+# 6.5 恢復原始 Canvas
 # 7. 檢查變更 + 使用者確認
 # 8. Git Commit
 # 9. Pull Rebase + Push
@@ -189,14 +190,18 @@ Write-Host "OK：Vault 同步完成" -ForegroundColor Green
 
 
 # ==========================================
-# 5.5 Canvas 圖片 / PDF 附件路徑轉換
+# 5.5 暫時轉換 Canvas 圖片 / PDF 路徑
+# Build 完成後會恢復原始 Canvas
 # ==========================================
 
 Write-Host ""
-Write-Host "[5.5/9] 處理 Canvas 圖片 / PDF 附件..." -ForegroundColor Yellow
+Write-Host "[5.5/9] 暫時處理 Canvas 圖片 / PDF 附件..." -ForegroundColor Yellow
 
-# GitHub Pages 中這個 Vault 的網站根路徑
 $WebVaultRoot = "/quartz/vault_python_20260816"
+
+# 用記憶體保存每個 Canvas 的原始內容。
+# 只修改 Quartz\content，不修改 Google Drive Obsidian Vault。
+$CanvasBackups = @{}
 
 $CanvasFiles = @(
     Get-ChildItem `
@@ -206,153 +211,124 @@ $CanvasFiles = @(
         -Filter "*.canvas"
 )
 
-if ($CanvasFiles.Count -eq 0) {
-
-    Write-Host "沒有找到 Canvas 檔案。" -ForegroundColor Gray
-
-}
-else {
-
-    Write-Host "找到 $($CanvasFiles.Count) 個 Canvas 檔案。" -ForegroundColor Green
+try {
 
     foreach ($CanvasFile in $CanvasFiles) {
 
-        Write-Host ""
-        Write-Host "處理 Canvas：" -ForegroundColor Gray
-        Write-Host $CanvasFile.FullName -ForegroundColor DarkGray
+        $OriginalJson = Get-Content `
+            -Path $CanvasFile.FullName `
+            -Raw `
+            -Encoding UTF8
 
-        try {
+        # Build 前先保存原始 Canvas
+        $CanvasBackups[$CanvasFile.FullName] = $OriginalJson
 
-            $Canvas = Get-Content `
-                -Path $CanvasFile.FullName `
-                -Raw `
-                -Encoding UTF8 |
-                ConvertFrom-Json
+        $Canvas = $OriginalJson | ConvertFrom-Json
 
-            $CanvasChanged   = $false
-            $ConvertedCount = 0
+        $CanvasChanged   = $false
+        $ConvertedCount = 0
 
-            foreach ($Node in $Canvas.nodes) {
+        foreach ($Node in $Canvas.nodes) {
 
-                # 只處理 Obsidian Canvas 的 file node
-                if (
-                    $Node.type -eq "file" -and
-                    $Node.file
-                ) {
+            if ($Node.type -eq "file" -and $Node.file) {
 
-                    # Obsidian 內原始路徑
-                    # 例如：
-                    # attch/set-2.png
-                    # attch/Python and Django(物聯網班最新版).pdf
+                $OriginalPath = $Node.file -replace '\\', '/'
 
-                    $OriginalPath = $Node.file -replace '\\', '/'
+                # 只處理 Vault 根目錄下 attch/ 的附件。
+                # 這可避免把一般相對路徑誤轉成錯誤網址。
+                if ($OriginalPath -notmatch '^attch/') {
+                    continue
+                }
 
-                    # 將每一層路徑做 URL Encode
-                    $EncodedPath = (
-                        $OriginalPath -split '/' |
-                        ForEach-Object {
-                            [System.Uri]::EscapeDataString($_)
-                        }
-                    ) -join '/'
-
-                    # Quartz / GitHub Pages 使用的絕對網站路徑
-                    $WebPath = "$WebVaultRoot/$EncodedPath"
-
-                    # ======================================
-                    # 圖片
-                    # ======================================
-
-                    if (
-                        $OriginalPath -match '\.(png|jpg|jpeg|gif|webp|svg)$'
-                    ) {
-
-                        $Node.type = "text"
-                        $Node.PSObject.Properties.Remove("file")
-
-                        $Node |
-                            Add-Member `
-                                -NotePropertyName "text" `
-                                -NotePropertyValue "![]($WebPath)" `
-                                -Force
-
-                        $CanvasChanged = $true
-                        $ConvertedCount++
-
-                        Write-Host "  圖片：" -ForegroundColor Green
-                        Write-Host "  $OriginalPath" -ForegroundColor Gray
-                        Write-Host "       -> $WebPath" -ForegroundColor DarkGray
+                $EncodedPath = (
+                    $OriginalPath -split '/' |
+                    ForEach-Object {
+                        [System.Uri]::EscapeDataString($_)
                     }
+                ) -join '/'
 
-                    # ======================================
-                    # PDF
-                    # ======================================
+                $WebPath = "$WebVaultRoot/$EncodedPath"
 
-                    elseif (
-                        $OriginalPath -match '\.pdf$'
-                    ) {
+                # 圖片：轉成 Markdown 圖片節點
+                if ($OriginalPath -match '\.(png|jpg|jpeg|gif|webp|svg)$') {
 
-                        $PdfName = [System.IO.Path]::GetFileName(
-                            $OriginalPath
-                        )
+                    $Node.type = "text"
+                    $Node.PSObject.Properties.Remove("file")
 
-                        $Node.type = "text"
-                        $Node.PSObject.Properties.Remove("file")
+                    $Node |
+                        Add-Member `
+                            -NotePropertyName "text" `
+                            -NotePropertyValue "![]($WebPath)" `
+                            -Force
 
-                        $Node |
-                            Add-Member `
-                                -NotePropertyName "text" `
-                                -NotePropertyValue "[📄 開啟 PDF：$PdfName]($WebPath)" `
-                                -Force
+                    $CanvasChanged = $true
+                    $ConvertedCount++
 
-                        $CanvasChanged = $true
-                        $ConvertedCount++
+                    Write-Host "圖片：$OriginalPath" -ForegroundColor Green
+                    Write-Host "   -> $WebPath" -ForegroundColor DarkGray
+                }
 
-                        Write-Host "  PDF：" -ForegroundColor Cyan
-                        Write-Host "  $OriginalPath" -ForegroundColor Gray
-                        Write-Host "       -> $WebPath" -ForegroundColor DarkGray
-                    }
+                # PDF：轉成可點擊 Markdown 連結
+                elseif ($OriginalPath -match '\.pdf$') {
+
+                    $PdfName = [System.IO.Path]::GetFileName($OriginalPath)
+
+                    $Node.type = "text"
+                    $Node.PSObject.Properties.Remove("file")
+
+                    $Node |
+                        Add-Member `
+                            -NotePropertyName "text" `
+                            -NotePropertyValue "[📄 開啟 PDF：$PdfName]($WebPath)" `
+                            -Force
+
+                    $CanvasChanged = $true
+                    $ConvertedCount++
+
+                    Write-Host "PDF：$OriginalPath" -ForegroundColor Cyan
+                    Write-Host "   -> $WebPath" -ForegroundColor DarkGray
                 }
             }
-
-            # 儲存轉換後 Canvas
-            if ($CanvasChanged) {
-
-                $CanvasJson = $Canvas |
-                    ConvertTo-Json -Depth 100
-
-                $Utf8NoBom = New-Object `
-                    System.Text.UTF8Encoding($false)
-
-                [System.IO.File]::WriteAllText(
-                    $CanvasFile.FullName,
-                    $CanvasJson,
-                    $Utf8NoBom
-                )
-
-                Write-Host ""
-                Write-Host "完成：轉換 $ConvertedCount 個附件節點。" -ForegroundColor Green
-            }
-            else {
-
-                Write-Host "沒有需要轉換的附件。" -ForegroundColor DarkGray
-            }
-
         }
-        catch {
 
-            Write-Host ""
-            Write-Host "Canvas 處理失敗：" -ForegroundColor Red
-            Write-Host $CanvasFile.FullName -ForegroundColor Red
-            Write-Host $_.Exception.Message -ForegroundColor Red
+        if ($CanvasChanged) {
 
-            Read-Host "按 Enter 結束"
-            exit 1
+            $CanvasJson = $Canvas | ConvertTo-Json -Depth 100
+            $Utf8NoBom  = New-Object System.Text.UTF8Encoding($false)
+
+            [System.IO.File]::WriteAllText(
+                $CanvasFile.FullName,
+                $CanvasJson,
+                $Utf8NoBom
+            )
+
+            Write-Host "暫時轉換完成：$ConvertedCount 個附件節點。" -ForegroundColor Green
         }
     }
+
+}
+catch {
+
+    # 若轉換途中發生錯誤，先恢復所有已備份 Canvas
+    foreach ($BackupPath in $CanvasBackups.Keys) {
+        $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText(
+            $BackupPath,
+            $CanvasBackups[$BackupPath],
+            $Utf8NoBom
+        )
+    }
+
+    Write-Host ""
+    Write-Host "Canvas 暫時轉換失敗，已恢復原始 Canvas。" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+
+    Read-Host "按 Enter 結束"
+    exit 1
 }
 
 Write-Host ""
-Write-Host "OK：Canvas 圖片 / PDF 處理完成" -ForegroundColor Green
+Write-Host "OK：Canvas 暫時轉換完成，準備 Build" -ForegroundColor Green
 
 
 # ==========================================
@@ -425,6 +401,18 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "不會 Commit。" -ForegroundColor Yellow
     Write-Host "不會 Push 到 GitHub。" -ForegroundColor Yellow
 
+    # Build 失敗也必須恢復原始 Canvas
+    foreach ($BackupPath in $CanvasBackups.Keys) {
+        $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText(
+            $BackupPath,
+            $CanvasBackups[$BackupPath],
+            $Utf8NoBom
+        )
+    }
+
+    Write-Host "Canvas 已恢復成 Obsidian 原始內容。" -ForegroundColor Green
+
     Read-Host "按 Enter 結束"
     exit 1
 }
@@ -444,6 +432,42 @@ if (-not (Test-Path $Public)) {
 
 Write-Host ""
 Write-Host "OK：Quartz Build 成功" -ForegroundColor Green
+
+
+# ==========================================
+# 6.5 恢復原始 Canvas
+# ==========================================
+
+Write-Host ""
+Write-Host "[6.5/9] 恢復 Obsidian 原始 Canvas..." -ForegroundColor Yellow
+
+try {
+
+    foreach ($BackupPath in $CanvasBackups.Keys) {
+
+        $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+        [System.IO.File]::WriteAllText(
+            $BackupPath,
+            $CanvasBackups[$BackupPath],
+            $Utf8NoBom
+        )
+    }
+
+    Write-Host "OK：Canvas 已恢復成 Obsidian 原始內容" -ForegroundColor Green
+
+}
+catch {
+
+    Write-Host ""
+    Write-Host "警告：Canvas 恢復失敗。" -ForegroundColor Red
+    Write-Host "為避免把網站轉換版 Canvas Commit 到 Git，停止發布。" -ForegroundColor Yellow
+    Write-Host $_.Exception.Message -ForegroundColor Red
+
+    Read-Host "按 Enter 結束"
+    exit 1
+}
+
 
 
 # ==========================================
