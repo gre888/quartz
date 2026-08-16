@@ -72,39 +72,45 @@ foreach ($CanvasFile in $CanvasFiles) {
 
     foreach ($Node in $Canvas.nodes) {
 
-        if ($Node.type -ne "file" -or -not $Node.file) {
+        Write-Host "------------------------------" -ForegroundColor DarkGray
+        Write-Host "Node type = $($Node.type)" -ForegroundColor Gray
+        Write-Host "Node file = $($Node.file)" -ForegroundColor Gray
+
+        if (-not $Node.file) {
+            Write-Host "跳過：沒有 file 欄位" -ForegroundColor DarkGray
             continue
         }
 
         $OriginalPath = ($Node.file -replace '\\', '/').TrimStart('/')
 
-        # 目前你的附件都從 Vault 根目錄的 attch/ 取用。
-        # 不碰其他相對路徑，避免誤轉一般 Canvas file node。
-        if ($OriginalPath -notmatch '^attch/') {
+        Write-Host "OriginalPath = $OriginalPath" -ForegroundColor Gray
+
+        # 只要路徑裡包含 attch/ 就處理
+        if ($OriginalPath -notmatch '(^|/)attch/') {
+            Write-Host "跳過：不是 attch 附件" -ForegroundColor DarkGray
             continue
+        }
+
+        # 如果 attch/ 前面還有其他資料夾，裁成 attch/... 開始
+        $AttchIndex = $OriginalPath.IndexOf("attch/")
+
+        if ($AttchIndex -ge 0) {
+            $OriginalPath = $OriginalPath.Substring($AttchIndex)
         }
 
         $Segments = $OriginalPath -split '/'
         $FileName = $Segments[-1]
-        $DirSegments = @()
 
-        if ($Segments.Count -gt 1) {
-            $DirSegments = $Segments[0..($Segments.Count - 2)]
-        }
+        # 配合目前 Quartz 實際輸出的附件檔名：
+        # Python and Django(...).pdf
+        # -> python-and-django(...).pdf
+        $SlugFileName = $FileName.ToLowerInvariant() -replace '\s+', '-'
 
-        $SlugFileName = Convert-ToQuartzSlug -Name $FileName
+        $WebPath = "$WebVaultRoot/attch/$SlugFileName"
 
-        $WebSegments = @()
-        $WebSegments += $WebVaultRoot.TrimEnd('/')
-
-        if ($DirSegments.Count -gt 0) {
-            $WebSegments += ($DirSegments -join '/')
-        }
-
-        $WebSegments += $SlugFileName
-        $WebPath = ($WebSegments -join '/')
-
-        # 圖片 -> Markdown 圖片
+        # ======================================
+        # 圖片
+        # ======================================
         if ($OriginalPath -match '\.(png|jpg|jpeg|gif|webp|svg)$') {
 
             $Node.type = "text"
@@ -119,11 +125,14 @@ foreach ($CanvasFile in $CanvasFiles) {
             $Changed = $true
             $TotalConverted++
 
-            Write-Host "  圖片：$OriginalPath" -ForegroundColor Green
-            Write-Host "       -> $WebPath" -ForegroundColor DarkGray
+            Write-Host "圖片轉換成功：" -ForegroundColor Green
+            Write-Host "  $OriginalPath" -ForegroundColor Gray
+            Write-Host "  -> $WebPath" -ForegroundColor DarkGray
         }
 
-        # PDF -> Markdown 可點擊連結
+        # ======================================
+        # PDF
+        # ======================================
         elseif ($OriginalPath -match '\.pdf$') {
 
             $Node.type = "text"
@@ -138,8 +147,9 @@ foreach ($CanvasFile in $CanvasFiles) {
             $Changed = $true
             $TotalConverted++
 
-            Write-Host "  PDF：$OriginalPath" -ForegroundColor Cyan
-            Write-Host "       -> $WebPath" -ForegroundColor DarkGray
+            Write-Host "PDF 轉換成功：" -ForegroundColor Cyan
+            Write-Host "  $OriginalPath" -ForegroundColor Gray
+            Write-Host "  -> $WebPath" -ForegroundColor DarkGray
         }
     }
 
