@@ -1,16 +1,6 @@
 {
-    "nodes":  [
-                  {
-                      "id":  "8c95566a1fbb877d",
-                      "x":  -280,
-                      "y":  -1080,
-                      "width":  516,
-                      "height":  940,
-                      "type":  "text",
-                      "text":  "[📄 開啟 PDF：Python and Django(物聯網班最新版).pdf](/quartz/vault_python_20260816/attch/Python%20and%20Django(%E7%89%A9%E8%81%AF%E7%B6%B2%E7%8F%AD%E6%9C%80%E6%96%B0%E7%89%88).pdf)"
-                  }
-              ],
-    "edges":  [
-
-              ]
+	"nodes":[
+		{"id":"8c95566a1fbb877d","x":-280,"y":-1080,"width":516,"height":940,"type":"file","file":"attch/Python and Django(物聯網班最新版).pdf"}
+	],
+	"edges":[]
 }
