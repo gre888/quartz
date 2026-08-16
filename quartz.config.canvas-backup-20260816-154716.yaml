@@ -1,4 +1,4 @@
-﻿# yaml-language-server: $schema=./quartz/plugins/quartz-plugins.schema.json
+# yaml-language-server: $schema=./quartz/plugins/quartz-plugins.schema.json
 configuration:
   pageTitle: Quartz 5
   pageTitleSuffix: ""
@@ -174,7 +174,7 @@ plugins:
   - source: "@quartz-community/cname"
     enabled: true
 
-  - source: github:quartz-community/canvas-page
+  - source: "@quartz-community/canvas-page"
     enabled: true
     options:
       enableInteraction: true
