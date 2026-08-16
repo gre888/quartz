@@ -20,20 +20,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ==========================================
+      # 1. Checkout
+      # ==========================================
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ==========================================
+      # 2. Node.js
+      # ==========================================
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # ==========================================
+      # 3. 安裝 Quartz dependencies
+      # ==========================================
       - name: Install dependencies
         run: npm ci
 
-      # GitHub Actions 也執行和本機相同的 Canvas 路徑轉換。
-      # Actions 的 checkout 是暫時工作目錄，所以 Build 後不需要恢復 Canvas。
+      # ==========================================
+      # 4. 修正 Obsidian Canvas 圖片 / PDF 路徑
+      #
+      # 例如：
+      # attch/Python and Django(...).pdf
+      #
+      # 轉成 Quartz 網站使用的：
+      # /quartz/vault_python_20260816/attch/
+      # python-and-django(...).pdf
+      # ==========================================
       - name: Fix Canvas attachment paths
         shell: pwsh
         run: |
@@ -41,29 +58,52 @@ jobs:
             -Target "./content/vault_python_20260816" `
             -WebVaultRoot "/quartz/vault_python_20260816"
 
+      # ==========================================
+      # 5. Build Quartz
+      # ==========================================
       - name: Build Quartz
         run: npx quartz build
 
+      # ==========================================
+      # 6. Debug：確認 Django / PDF 有產生
+      # ==========================================
       - name: Check Django and PDF output
         shell: bash
         run: |
-          echo "===== Django output ====="
+          echo "========================================"
+          echo "Django output"
+          echo "========================================"
           find public -type f | grep -i "django" || true
 
-          echo "===== PDF output ====="
+          echo ""
+          echo "========================================"
+          echo "PDF output"
+          echo "========================================"
           find public -type f | grep -i "\.pdf$" || true
 
-          echo "===== Canvas output ====="
+          echo ""
+          echo "========================================"
+          echo "Canvas output"
+          echo "========================================"
           find public -type f | grep -i "\.canvas" || true
 
+      # ==========================================
+      # 7. Setup GitHub Pages
+      # ==========================================
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      # ==========================================
+      # 8. Upload public
+      # ==========================================
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
+  # ==========================================
+  # Deploy
+  # ==========================================
   deploy:
     environment:
       name: github-pages
