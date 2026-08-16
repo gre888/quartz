@@ -1,433 +1,302 @@
-﻿# ==========================================
-# Quartz Obsidian 自動發布
-# ==========================================
-
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 # ==========================================
-# 基本設定
+# Obsidian -> Quartz
+# 桌機 / 筆電雙機發布版
 # ==========================================
 
-$QuartzPath = "C:\quartz\quartz"
+$Vault   = "G:\我的雲端硬碟\obsidian vault\vault_python_20260816"
+$Quartz  = "C:\quartz\quartz"
+$Target  = "$Quartz\content\vault_python_20260816"
+$Website = "https://gre888.github.io/quartz/"
 
-$Source = "G:\我的雲端硬碟\obsidian vault\vault_python_20260816"
+Clear-Host
 
-$Destination = "$QuartzPath\content\vault_python_20260816"
-
-$SiteUrl = "https://gre888.github.io/quartz/"
-
-$Repo = "gre888/quartz"
-
-$WorkflowName = "Deploy Quartz to GitHub Pages"
-
-# ==========================================
-# 標題
-# ==========================================
-
-Write-Host ""
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "      Quartz Obsidian 自動發布" -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "       Obsidian -> Quartz Publisher" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ==========================================
-# 確認路徑
-# ==========================================
-
-if (-not (Test-Path $QuartzPath)) {
-
-    Write-Host "錯誤：找不到 Quartz 資料夾！" -ForegroundColor Red
-    Write-Host $QuartzPath
-    exit 1
-}
-
-if (-not (Test-Path $Source)) {
-
-    Write-Host "錯誤：找不到 Obsidian Vault！" -ForegroundColor Red
-    Write-Host $Source
-    exit 1
-}
-
-Set-Location $QuartzPath
 
 # ==========================================
-# [1/5] 同步 Obsidian Vault
+# 1. 檢查 Vault
 # ==========================================
 
-Write-Host "[1/5] 同步 Obsidian Vault..." -ForegroundColor Cyan
-Write-Host ""
+Write-Host "[1/8] 檢查 Google Drive Vault..." -ForegroundColor Yellow
 
-robocopy $Source $Destination /MIR /XD ".obsidian" /R:2 /W:2
-
-$RobocopyExitCode = $LASTEXITCODE
-
-if ($RobocopyExitCode -gt 7) {
+if (-not (Test-Path $Vault)) {
 
     Write-Host ""
-    Write-Host "錯誤：Obsidian Vault 同步失敗！" -ForegroundColor Red
-    Write-Host "Robocopy 結束代碼：$RobocopyExitCode" -ForegroundColor Red
+    Write-Host "找不到 Vault：" -ForegroundColor Red
+    Write-Host $Vault -ForegroundColor Red
+    Write-Host ""
+    Write-Host "請確認 Google Drive 已啟動，而且磁碟代號為 G:" -ForegroundColor Yellow
+
+    Read-Host "按 Enter 結束"
+    exit 1
+}
+
+Write-Host "OK：Vault 已找到" -ForegroundColor Green
+
+
+# ==========================================
+# 2. 檢查 Quartz
+# ==========================================
+
+Write-Host ""
+Write-Host "[2/8] 檢查 Quartz..." -ForegroundColor Yellow
+
+if (-not (Test-Path "$Quartz\.git")) {
+
+    Write-Host ""
+    Write-Host "找不到 Quartz Git Repository：" -ForegroundColor Red
+    Write-Host $Quartz -ForegroundColor Red
+
+    Read-Host "按 Enter 結束"
+    exit 1
+}
+
+Set-Location $Quartz
+
+Write-Host "OK：Quartz 已找到" -ForegroundColor Green
+
+
+# ==========================================
+# 3. 檢查 Git 工作目錄
+# ==========================================
+
+Write-Host ""
+Write-Host "[3/8] 檢查 Git 狀態..." -ForegroundColor Yellow
+
+$BeforeStatus = git status --porcelain
+
+if ($BeforeStatus) {
+
+    Write-Host ""
+    Write-Host "Quartz 目前有尚未提交的修改：" -ForegroundColor Red
+    Write-Host ""
+
+    git status --short
+
+    Write-Host ""
+    Write-Host "為避免覆蓋 Quartz 程式或 Canvas 修改，停止發布。" -ForegroundColor Yellow
+    Write-Host ""
+
+    Read-Host "按 Enter 結束"
+    exit 1
+}
+
+Write-Host "OK：Git 工作目錄乾淨" -ForegroundColor Green
+
+
+# ==========================================
+# 4. 取得 GitHub 最新版本
+# ==========================================
+
+Write-Host ""
+Write-Host "[4/8] 取得 GitHub 最新版本..." -ForegroundColor Yellow
+
+git pull --rebase origin main
+
+if ($LASTEXITCODE -ne 0) {
+
+    Write-Host ""
+    Write-Host "git pull 失敗。" -ForegroundColor Red
+    Write-Host "目前停止發布，不會修改網站。" -ForegroundColor Yellow
+
+    Read-Host "按 Enter 結束"
+    exit 1
+}
+
+Write-Host "OK：已取得 GitHub 最新版本" -ForegroundColor Green
+
+
+# ==========================================
+# 5. Vault -> Quartz
+# ==========================================
+
+Write-Host ""
+Write-Host "[5/8] 同步 Obsidian Vault..." -ForegroundColor Yellow
+
+if (-not (Test-Path $Target)) {
+    New-Item -ItemType Directory -Path $Target -Force | Out-Null
+}
+
+robocopy `
+    "$Vault" `
+    "$Target" `
+    /MIR `
+    /XD ".obsidian" ".git" `
+    /R:2 `
+    /W:1 `
+    /FFT `
+    /COPY:DAT `
+    /DCOPY:T
+
+$RoboCode = $LASTEXITCODE
+
+if ($RoboCode -ge 8) {
+
+    Write-Host ""
+    Write-Host "Robocopy 發生錯誤：$RoboCode" -ForegroundColor Red
+
+    Read-Host "按 Enter 結束"
     exit 1
 }
 
 Write-Host ""
-Write-Host "同步完成！" -ForegroundColor Green
+Write-Host "OK：Vault 同步完成" -ForegroundColor Green
+
+
+# ==========================================
+# 6. 顯示變更
+# ==========================================
+
 Write-Host ""
-
-# ==========================================
-# [2/5] 修正 Quartz Canvas 檔案路徑
-# ==========================================
-
-Write-Host "[2/5] 修正 Quartz Canvas 路徑..." -ForegroundColor Cyan
-Write-Host ""
-
-$VaultFolderName = Split-Path $Destination -Leaf
-$CanvasFiles = @(Get-ChildItem $Destination -Recurse -File -Filter "*.canvas")
-
-foreach ($CanvasFile in $CanvasFiles) {
-
-    Write-Host "處理：$($CanvasFile.Name)" -ForegroundColor Gray
-
-    try {
-
-        $Canvas = Get-Content $CanvasFile.FullName -Raw -Encoding UTF8 |
-            ConvertFrom-Json
-
-        $CanvasChanged = $false
-
-        foreach ($Node in $Canvas.nodes) {
-
-            if ($Node.type -eq "file" -and $Node.file) {
-
-                $OriginalPath = $Node.file -replace '\\', '/'
-                $Prefix = "$VaultFolderName/"
-
-                if (-not $OriginalPath.StartsWith($Prefix)) {
-
-                    $Node.file = "$Prefix$OriginalPath"
-                    $CanvasChanged = $true
-
-                    Write-Host "  $OriginalPath" -ForegroundColor Yellow
-                    Write-Host "  -> $($Node.file)" -ForegroundColor Green
-                }
-            }
-        }
-
-        if ($CanvasChanged) {
-
-            $CanvasJson = $Canvas | ConvertTo-Json -Depth 100
-            $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-
-            [System.IO.File]::WriteAllText(
-                $CanvasFile.FullName,
-                $CanvasJson,
-                $Utf8NoBom
-            )
-
-            Write-Host "  Canvas 路徑修正完成。" -ForegroundColor Green
-        }
-        else {
-
-            Write-Host "  不需要修改。" -ForegroundColor DarkGray
-        }
-    }
-    catch {
-
-        Write-Host "Canvas 處理失敗：" -ForegroundColor Red
-        Write-Host $CanvasFile.FullName -ForegroundColor Red
-        Write-Host $_.Exception.Message -ForegroundColor Red
-        exit 1
-    }
-
-    Write-Host ""
-}
-
-# ==========================================
-# [3/5] 偵測 Git 變更
-# ==========================================
-
-Write-Host "[3/5] 偵測 Git 變更..." -ForegroundColor Cyan
-Write-Host ""
+Write-Host "[6/8] 檢查網站變更..." -ForegroundColor Yellow
 
 git add -A
 
-if ($LASTEXITCODE -ne 0) {
+$Changes = git status --short
 
-    Write-Host "錯誤：git add 失敗！" -ForegroundColor Red
-    exit 1
-}
+if (-not $Changes) {
 
-$Changes = @(git status --short)
-
-if ($Changes.Count -eq 0) {
-
-    Write-Host "沒有偵測到任何變更。" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "不需要 Commit，也不需要 Push。" -ForegroundColor Yellow
+    Write-Host "沒有需要發布的變更。" -ForegroundColor Green
+    Write-Host "Obsidian 與 Quartz 目前內容相同。" -ForegroundColor Gray
     Write-Host ""
+
+    Read-Host "按 Enter 結束"
     exit 0
 }
 
-# ==========================================
-# 顯示變更
-# ==========================================
-
-Write-Host "偵測到以下變更：" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "----------------------------------------" -ForegroundColor Cyan
+Write-Host "即將發布以下變更：" -ForegroundColor Cyan
+Write-Host "----------------------------------------" -ForegroundColor Cyan
 Write-Host ""
 
-foreach ($Change in $Changes) {
-
-    if ($Change.Length -ge 3) {
-
-        $Status = $Change.Substring(0, 2)
-        $File = $Change.Substring(3)
-    }
-    else {
-
-        $Status = $Change
-        $File = ""
-    }
-
-    switch ($Status.Trim()) {
-
-        "M" {
-            Write-Host " M  $File" -ForegroundColor Yellow
-        }
-
-        "A" {
-            Write-Host " A  $File" -ForegroundColor Green
-        }
-
-        "D" {
-            Write-Host " D  $File" -ForegroundColor Red
-        }
-
-        "R" {
-            Write-Host " R  $File" -ForegroundColor Magenta
-        }
-
-        default {
-            Write-Host " $Status  $File"
-        }
-    }
-}
+git status --short
 
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "總共 $($Changes.Count) 個檔案變更" -ForegroundColor Yellow
-Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "M = 修改   A = 新增   D = 刪除" -ForegroundColor Gray
 Write-Host ""
 
-# ==========================================
-# 詢問是否發布
-# ==========================================
+$Confirm = Read-Host "確定發布？ (Y/N)"
 
-$Confirm = Read-Host "是否發布？ [Y/N]"
+if ($Confirm -notmatch "^[Yy]$") {
 
-Write-Host ""
-
-if ($Confirm -notmatch '^[Yy]$') {
-
+    Write-Host ""
     Write-Host "取消發布。" -ForegroundColor Yellow
-    Write-Host ""
 
-    git restore --staged .
+    git reset | Out-Null
+    git restore --worktree "$Target" 2>$null
 
-    Write-Host "已取消 Git Staging。" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "同步到 content 的檔案會保留，但不會 Commit 或 Push。" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Host "沒有推送到 GitHub。" -ForegroundColor Green
+
+    Read-Host "按 Enter 結束"
     exit 0
 }
 
+
 # ==========================================
-# [4/5] 建立 Git Commit
+# 7. Commit
 # ==========================================
 
-Write-Host "[4/5] 建立 Git Commit..." -ForegroundColor Cyan
 Write-Host ""
+Write-Host "[7/8] 建立 Git Commit..." -ForegroundColor Yellow
 
-$CommitMessage = "Update Obsidian notes $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+$Now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-git commit -m "$CommitMessage"
+git commit -m "Update Obsidian notes $Now"
 
 if ($LASTEXITCODE -ne 0) {
 
     Write-Host ""
-    Write-Host "錯誤：Git Commit 失敗！" -ForegroundColor Red
+    Write-Host "Git commit 失敗。" -ForegroundColor Red
+
+    Read-Host "按 Enter 結束"
     exit 1
 }
 
-Write-Host ""
-Write-Host "Commit 完成！" -ForegroundColor Green
-Write-Host ""
 
 # ==========================================
-# [5/5] Push 到 GitHub
+# Push 前再次同步
 # ==========================================
 
-Write-Host "[5/5] Push 到 GitHub..." -ForegroundColor Cyan
 Write-Host ""
+Write-Host "檢查另一台電腦是否剛發布新版本..." -ForegroundColor Yellow
 
-git push
+git pull --rebase origin main
 
 if ($LASTEXITCODE -ne 0) {
 
     Write-Host ""
-    Write-Host "錯誤：GitHub Push 失敗！" -ForegroundColor Red
+    Write-Host "Rebase 失敗。" -ForegroundColor Red
+    Write-Host "可能桌機與筆電同時修改了相同內容。" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "Commit 已建立，但尚未成功 Push。" -ForegroundColor Yellow
+    Write-Host "為避免資料被覆蓋，目前不執行 push。" -ForegroundColor Yellow
+
+    Read-Host "按 Enter 結束"
+    exit 1
+}
+
+
+# ==========================================
+# Push
+# ==========================================
+
+Write-Host ""
+Write-Host "[8/8] Push 到 GitHub..." -ForegroundColor Yellow
+
+git push origin main
+
+if ($LASTEXITCODE -ne 0) {
+
     Write-Host ""
+    Write-Host "Git push 失敗。" -ForegroundColor Red
+
+    Read-Host "按 Enter 結束"
     exit 1
 }
 
 Write-Host ""
-Write-Host "GitHub Push 成功！" -ForegroundColor Green
-Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "              發布成功！" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+
 
 # ==========================================
-# GitHub Actions 部署狀態
+# GitHub Actions
 # ==========================================
-
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "       GitHub Actions 部署狀態" -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host ""
-
-# ==========================================
-# 檢查 GitHub CLI
-# ==========================================
-
-$GhCommand = Get-Command gh -ErrorAction SilentlyContinue
-
-if ($null -eq $GhCommand) {
-
-    Write-Host "找不到 GitHub CLI (gh)。" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "因此無法在 PowerShell 中直接取得 Actions 狀態。" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "請手動查看：" -ForegroundColor Cyan
-    Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
-    Write-Host ""
-
-    Start-Process $SiteUrl
-
-    Write-Host "已開啟網站。" -ForegroundColor Green
-    Write-Host ""
-    exit 0
-}
-
-# ==========================================
-# 等待 GitHub Actions 建立
-# ==========================================
-
-Write-Host "等待 GitHub Actions 啟動..." -ForegroundColor Cyan
-Write-Host ""
-
-$RunId = $null
-$CurrentCommit = git rev-parse HEAD
-
-for ($i = 1; $i -le 15; $i++) {
-
-    $Run = gh run list `
-        --repo $Repo `
-        --workflow "$WorkflowName" `
-        --branch main `
-        --limit 1 `
-        --json databaseId,headSha,status,conclusion `
-        --jq '.[0]'
-
-    if ($LASTEXITCODE -eq 0 -and $Run) {
-
-        try {
-
-            $RunObject = $Run | ConvertFrom-Json
-
-            if ($RunObject.headSha -eq $CurrentCommit) {
-
-                $RunId = $RunObject.databaseId
-                break
-            }
-        }
-        catch {
-
-            Write-Host "等待 Actions 資料..." -ForegroundColor DarkGray
-        }
-    }
-
-    Start-Sleep -Seconds 2
-}
-
-# ==========================================
-# 找不到 Actions
-# ==========================================
-
-if ($null -eq $RunId) {
-
-    Write-Host "無法取得最新 GitHub Actions Run。" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "請手動查看：" -ForegroundColor Cyan
-    Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
-    Write-Host ""
-
-    Start-Process $SiteUrl
-    exit 0
-}
-
-# ==========================================
-# 顯示 Run ID
-# ==========================================
-
-Write-Host "GitHub Actions Run ID：" -ForegroundColor Cyan
-Write-Host $RunId -ForegroundColor White
-Write-Host ""
-
-Write-Host "正在等待 Quartz 部署完成..." -ForegroundColor Cyan
-Write-Host ""
-
-# ==========================================
-# Watch Actions
-# ==========================================
-
-gh run watch $RunId `
-    --repo $Repo `
-    --compact `
-    --exit-status
-
-$ActionsResult = $LASTEXITCODE
 
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "GitHub Actions：" -ForegroundColor Cyan
+Write-Host ""
 
-if ($ActionsResult -eq 0) {
+if (Get-Command gh -ErrorAction SilentlyContinue) {
 
-    Write-Host "       GitHub Actions：成功" -ForegroundColor Green
-    Write-Host "       Quartz：部署完成" -ForegroundColor Green
+    gh run list `
+        --workflow "Deploy Quartz to GitHub Pages" `
+        --limit 3
 }
 else {
 
-    Write-Host "       GitHub Actions：失敗" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "請查看 Actions 詳細錯誤：" -ForegroundColor Yellow
-    Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
+    Write-Host "找不到 gh，略過 Actions 狀態。" -ForegroundColor Yellow
 }
 
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host ""
 
 # ==========================================
-# 自動開啟網站
+# 開啟網站
 # ==========================================
 
-Write-Host "網站：" -ForegroundColor Cyan
-Write-Host $SiteUrl -ForegroundColor White
 Write-Host ""
 
-Write-Host "正在開啟網站..." -ForegroundColor Cyan
+$Open = Read-Host "是否開啟 Quartz 網站？ (Y/N)"
 
-Start-Process $SiteUrl
+if ($Open -match "^[Yy]$") {
+    Start-Process $Website
+}
 
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Green
-Write-Host "          發布流程完成！" -ForegroundColor Green
-Write-Host "==========================================" -ForegroundColor Green
-Write-Host ""
+Read-Host "按 Enter 關閉"
