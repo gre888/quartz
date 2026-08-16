@@ -74,12 +74,101 @@ Write-Host "同步完成！" -ForegroundColor Green
 Write-Host ""
 
 # ==========================================
-# [2/5] 保留 Canvas 原始圖片節點
+# [2/5] 自動轉換 Canvas 圖片節點
 # ==========================================
 
-Write-Host "[2/5] 保留 Canvas 原始 file 圖片節點..." -ForegroundColor Cyan
+Write-Host "[2/5] 處理 Canvas 圖片節點..." -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Canvas 圖片節點不需要轉換。" -ForegroundColor Green
+
+$CanvasFiles = @(
+    Get-ChildItem `
+        -Path $Destination `
+        -Recurse `
+        -File `
+        -Filter "*.canvas"
+)
+
+if ($CanvasFiles.Count -eq 0) {
+
+    Write-Host "沒有找到 Canvas 檔案。" -ForegroundColor Yellow
+}
+else {
+
+    Write-Host "找到 $($CanvasFiles.Count) 個 Canvas 檔案。" -ForegroundColor Green
+    Write-Host ""
+
+    foreach ($CanvasFile in $CanvasFiles) {
+
+        Write-Host "處理：$($CanvasFile.FullName)" -ForegroundColor Gray
+
+        try {
+
+            $Canvas = Get-Content `
+                -Path $CanvasFile.FullName `
+                -Raw `
+                -Encoding UTF8 |
+                ConvertFrom-Json
+
+            $CanvasChanged = $false
+            $ConvertedCount = 0
+
+            foreach ($Node in $Canvas.nodes) {
+
+                if (
+                    $Node.type -eq "file" -and
+                    $Node.file -match '\.(png|jpg|jpeg|gif|webp)$'
+                ) {
+
+                    $ImagePath = (($Node.file -replace '\\', '/') -split '/' | ForEach-Object { [System.Uri]::EscapeDataString($_) }) -join '/'
+
+                    $Node.type = "text"
+                    $Node.PSObject.Properties.Remove("file")
+
+                    $Node |
+                        Add-Member `
+                            -NotePropertyName "text" `
+                            -NotePropertyValue "![]($ImagePath)" `
+                            -Force
+
+                    $CanvasChanged = $true
+                    $ConvertedCount++
+
+                    Write-Host "  已轉換圖片：$ImagePath" -ForegroundColor Green
+                }
+            }
+
+            if ($CanvasChanged) {
+
+                $CanvasJson = $Canvas | ConvertTo-Json -Depth 100
+                $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+                [System.IO.File]::WriteAllText(
+                    $CanvasFile.FullName,
+                    $CanvasJson,
+                    $Utf8NoBom
+                )
+
+                Write-Host "  完成：轉換 $ConvertedCount 個圖片節點。" -ForegroundColor Green
+            }
+            else {
+
+                Write-Host "  沒有需要轉換的圖片節點。" -ForegroundColor DarkGray
+            }
+        }
+        catch {
+
+            Write-Host ""
+            Write-Host "錯誤：Canvas 處理失敗！" -ForegroundColor Red
+            Write-Host $CanvasFile.FullName -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Red
+            exit 1
+        }
+
+        Write-Host ""
+    }
+}
+
+Write-Host "Canvas 圖片節點處理完成！" -ForegroundColor Green
 Write-Host ""
 
 # ==========================================
