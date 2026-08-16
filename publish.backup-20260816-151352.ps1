@@ -51,21 +51,18 @@ if (-not (Test-Path $Source)) {
 Set-Location $QuartzPath
 
 # ==========================================
-# [1/5] 同步 Obsidian Vault
+# [1/4] 同步 Obsidian Vault
 # ==========================================
 
-Write-Host "[1/5] 同步 Obsidian Vault..." -ForegroundColor Cyan
+Write-Host "[1/4] 同步 Obsidian Vault..." -ForegroundColor Cyan
 Write-Host ""
 
-robocopy $Source $Destination /MIR /XD ".obsidian" /R:2 /W:2
+robocopy $Source $Destination /MIR /XD ".obsidian"
 
-$RobocopyExitCode = $LASTEXITCODE
-
-if ($RobocopyExitCode -gt 7) {
+if ($LASTEXITCODE -gt 7) {
 
     Write-Host ""
     Write-Host "錯誤：Obsidian Vault 同步失敗！" -ForegroundColor Red
-    Write-Host "Robocopy 結束代碼：$RobocopyExitCode" -ForegroundColor Red
     exit 1
 }
 
@@ -74,117 +71,13 @@ Write-Host "同步完成！" -ForegroundColor Green
 Write-Host ""
 
 # ==========================================
-# [2/5] 自動轉換 Canvas 圖片節點
+# [2/4] 偵測 Git 變更
 # ==========================================
 
-Write-Host "[2/5] 處理 Canvas 圖片節點..." -ForegroundColor Cyan
-Write-Host ""
-
-$CanvasFiles = @(
-    Get-ChildItem `
-        -Path $Destination `
-        -Recurse `
-        -File `
-        -Filter "*.canvas"
-)
-
-if ($CanvasFiles.Count -eq 0) {
-
-    Write-Host "沒有找到 Canvas 檔案。" -ForegroundColor Yellow
-}
-else {
-
-    Write-Host "找到 $($CanvasFiles.Count) 個 Canvas 檔案。" -ForegroundColor Green
-    Write-Host ""
-
-    foreach ($CanvasFile in $CanvasFiles) {
-
-        Write-Host "處理：$($CanvasFile.FullName)" -ForegroundColor Gray
-
-        try {
-
-            $Canvas = Get-Content `
-                -Path $CanvasFile.FullName `
-                -Raw `
-                -Encoding UTF8 |
-                ConvertFrom-Json
-
-            $CanvasChanged = $false
-            $ConvertedCount = 0
-
-            foreach ($Node in $Canvas.nodes) {
-
-                if (
-                    $Node.type -eq "file" -and
-                    $Node.file -match '\.(png|jpg|jpeg|gif|webp)$'
-                ) {
-
-                    $ImagePath = $Node.file -replace '\\', '/'
-
-                    $Node.type = "text"
-                    $Node.PSObject.Properties.Remove("file")
-
-                    $Node |
-                        Add-Member `
-                            -NotePropertyName "text" `
-                            -NotePropertyValue "![]($ImagePath)" `
-                            -Force
-
-                    $CanvasChanged = $true
-                    $ConvertedCount++
-
-                    Write-Host "  已轉換圖片：$ImagePath" -ForegroundColor Green
-                }
-            }
-
-            if ($CanvasChanged) {
-
-                $CanvasJson = $Canvas | ConvertTo-Json -Depth 100
-                $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-
-                [System.IO.File]::WriteAllText(
-                    $CanvasFile.FullName,
-                    $CanvasJson,
-                    $Utf8NoBom
-                )
-
-                Write-Host "  完成：轉換 $ConvertedCount 個圖片節點。" -ForegroundColor Green
-            }
-            else {
-
-                Write-Host "  沒有需要轉換的圖片節點。" -ForegroundColor DarkGray
-            }
-        }
-        catch {
-
-            Write-Host ""
-            Write-Host "錯誤：Canvas 處理失敗！" -ForegroundColor Red
-            Write-Host $CanvasFile.FullName -ForegroundColor Red
-            Write-Host $_.Exception.Message -ForegroundColor Red
-            exit 1
-        }
-
-        Write-Host ""
-    }
-}
-
-Write-Host "Canvas 圖片節點處理完成！" -ForegroundColor Green
-Write-Host ""
-
-# ==========================================
-# [3/5] 偵測 Git 變更
-# ==========================================
-
-Write-Host "[3/5] 偵測 Git 變更..." -ForegroundColor Cyan
+Write-Host "[2/4] 偵測變更..." -ForegroundColor Cyan
 Write-Host ""
 
 git add -A
-
-if ($LASTEXITCODE -ne 0) {
-
-    Write-Host "錯誤：git add 失敗！" -ForegroundColor Red
-    exit 1
-}
 
 $Changes = @(git status --short)
 
@@ -194,6 +87,7 @@ if ($Changes.Count -eq 0) {
     Write-Host ""
     Write-Host "不需要 Commit，也不需要 Push。" -ForegroundColor Yellow
     Write-Host ""
+
     exit 0
 }
 
@@ -206,16 +100,8 @@ Write-Host ""
 
 foreach ($Change in $Changes) {
 
-    if ($Change.Length -ge 3) {
-
-        $Status = $Change.Substring(0, 2)
-        $File = $Change.Substring(3)
-    }
-    else {
-
-        $Status = $Change
-        $File = ""
-    }
+    $Status = $Change.Substring(0,2)
+    $File = $Change.Substring(3)
 
     switch ($Status.Trim()) {
 
@@ -248,7 +134,7 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ==========================================
-# 詢問是否發布
+# [3/4] 詢問是否發布
 # ==========================================
 
 $Confirm = Read-Host "是否發布？ [Y/N]"
@@ -262,18 +148,19 @@ if ($Confirm -notmatch '^[Yy]$') {
 
     git restore --staged .
 
-    Write-Host "已取消 Git Staging。" -ForegroundColor Green
+    Write-Host "已自動取消 Git Staging。" -ForegroundColor Green
     Write-Host ""
-    Write-Host "同步到 content 的檔案會保留，但不會 Commit 或 Push。" -ForegroundColor Yellow
+    Write-Host "你的檔案沒有被修改或刪除。" -ForegroundColor Green
     Write-Host ""
+
     exit 0
 }
 
 # ==========================================
-# [4/5] 建立 Git Commit
+# Commit
 # ==========================================
 
-Write-Host "[4/5] 建立 Git Commit..." -ForegroundColor Cyan
+Write-Host "[3/4] 建立 Git Commit..." -ForegroundColor Cyan
 Write-Host ""
 
 $CommitMessage = "Update Obsidian notes $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
@@ -292,10 +179,10 @@ Write-Host "Commit 完成！" -ForegroundColor Green
 Write-Host ""
 
 # ==========================================
-# [5/5] Push 到 GitHub
+# [4/4] Push
 # ==========================================
 
-Write-Host "[5/5] Push 到 GitHub..." -ForegroundColor Cyan
+Write-Host "[4/4] Push 到 GitHub..." -ForegroundColor Cyan
 Write-Host ""
 
 git push
@@ -307,6 +194,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Commit 已建立，但尚未成功 Push。" -ForegroundColor Yellow
     Write-Host ""
+
     exit 1
 }
 
@@ -315,7 +203,7 @@ Write-Host "GitHub Push 成功！" -ForegroundColor Green
 Write-Host ""
 
 # ==========================================
-# GitHub Actions 部署狀態
+# GitHub Actions 狀態
 # ==========================================
 
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -323,9 +211,9 @@ Write-Host "       GitHub Actions 部署狀態" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ==========================================
+# ------------------------------------------
 # 檢查 GitHub CLI
-# ==========================================
+# ------------------------------------------
 
 $GhCommand = Get-Command gh -ErrorAction SilentlyContinue
 
@@ -343,18 +231,18 @@ if ($null -eq $GhCommand) {
 
     Write-Host "已開啟網站。" -ForegroundColor Green
     Write-Host ""
+
     exit 0
 }
 
-# ==========================================
+# ------------------------------------------
 # 等待 GitHub Actions 建立
-# ==========================================
+# ------------------------------------------
 
 Write-Host "等待 GitHub Actions 啟動..." -ForegroundColor Cyan
 Write-Host ""
 
 $RunId = $null
-$CurrentCommit = git rev-parse HEAD
 
 for ($i = 1; $i -le 15; $i++) {
 
@@ -372,24 +260,23 @@ for ($i = 1; $i -le 15; $i++) {
 
             $RunObject = $Run | ConvertFrom-Json
 
-            if ($RunObject.headSha -eq $CurrentCommit) {
+            if ($RunObject.headSha -eq (git rev-parse HEAD)) {
 
                 $RunId = $RunObject.databaseId
                 break
             }
+
         }
         catch {
-
-            Write-Host "等待 Actions 資料..." -ForegroundColor DarkGray
         }
     }
 
     Start-Sleep -Seconds 2
 }
 
-# ==========================================
+# ------------------------------------------
 # 找不到 Actions
-# ==========================================
+# ------------------------------------------
 
 if ($null -eq $RunId) {
 
@@ -400,12 +287,13 @@ if ($null -eq $RunId) {
     Write-Host ""
 
     Start-Process $SiteUrl
+
     exit 0
 }
 
-# ==========================================
+# ------------------------------------------
 # 顯示 Run ID
-# ==========================================
+# ------------------------------------------
 
 Write-Host "GitHub Actions Run ID：" -ForegroundColor Cyan
 Write-Host $RunId -ForegroundColor White
@@ -414,9 +302,9 @@ Write-Host ""
 Write-Host "正在等待 Quartz 部署完成..." -ForegroundColor Cyan
 Write-Host ""
 
-# ==========================================
+# ------------------------------------------
 # Watch Actions
-# ==========================================
+# ------------------------------------------
 
 gh run watch $RunId `
     --repo $Repo `
@@ -430,12 +318,13 @@ Write-Host "==========================================" -ForegroundColor Cyan
 
 if ($ActionsResult -eq 0) {
 
-    Write-Host "       GitHub Actions：成功" -ForegroundColor Green
-    Write-Host "       Quartz：部署完成" -ForegroundColor Green
+    Write-Host "       GitHub Actions：成功 ✓" -ForegroundColor Green
+    Write-Host "       Quartz：部署完成 ✓" -ForegroundColor Green
+
 }
 else {
 
-    Write-Host "       GitHub Actions：失敗" -ForegroundColor Red
+    Write-Host "       GitHub Actions：失敗 ✗" -ForegroundColor Red
     Write-Host ""
     Write-Host "請查看 Actions 詳細錯誤：" -ForegroundColor Yellow
     Write-Host "https://github.com/$Repo/actions" -ForegroundColor White
