@@ -1,0 +1,16 @@
+{
+    "nodes":  [
+                  {
+                      "id":  "80a49069809ff97f",
+                      "x":  -220,
+                      "y":  -220,
+                      "width":  400,
+                      "height":  400,
+                      "type":  "file",
+                      "file":  "vault_python_20260816/attch/Python and Django(物聯網班最新版).pdf"
+                  }
+              ],
+    "edges":  [
+
+              ]
+}
