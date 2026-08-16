@@ -1,8 +1,9 @@
 {
 	"nodes":[
-		{"id":"d793ab6fdaac42c6","x":-290,"y":-280,"width":400,"height":340,"type":"file","file":"python附件/第一次建立 改好自動流程了.md"},
-		{"id":"5d570e1ca2a8e5f3","x":-290,"y":-440,"width":250,"height":60,"type":"text","text":"第一次建立"},
-		{"id":"857f002487f20e21","x":-115,"y":131,"width":300,"height":400,"type":"file","file":"python課程/python tuple list dictionary set.png"}
+		{"id":"d793ab6fdaac42c6","type":"file","file":"python附件/第一次建立 改好自動流程了.md","x":-290,"y":-280,"width":400,"height":340},
+		{"id":"5d570e1ca2a8e5f3","type":"text","text":"第一次建立","x":-290,"y":-440,"width":250,"height":60},
+		{"id":"857f002487f20e21","type":"file","file":"python課程/python tuple list dictionary set.png","x":-115,"y":131,"width":300,"height":400},
+		{"id":"5561df32aa06a888","x":-24,"y":-68,"width":300,"height":400,"type":"file","file":"python課程/python tuple list dictionary set 1.png"}
 	],
 	"edges":[]
 }
