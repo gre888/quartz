@@ -495,18 +495,17 @@ else {
 
 
 # ==========================================
-# 開啟網站
+# 發布成功後自動開啟網站
 # ==========================================
 
 Write-Host ""
+Write-Host "正在開啟 Quartz 網站..." -ForegroundColor Cyan
 
-$Open = Read-Host "是否開啟 Quartz 網站？ (Y/N)"
+Start-Process $Website
 
-if ($Open -match "^[Yy]$") {
-
-    Start-Process $Website
-}
-
+Write-Host ""
+Write-Host "網站已在瀏覽器開啟：" -ForegroundColor Green
+Write-Host $Website -ForegroundColor Cyan
 
 Write-Host ""
 Read-Host "按 Enter 關閉"
