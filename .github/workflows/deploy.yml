@@ -1,4 +1,4 @@
-﻿name: Deploy Quartz to GitHub Pages
+name: Deploy Quartz to GitHub Pages
 
 on:
   push:
@@ -32,16 +32,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # GitHub Actions 也執行和本機相同的 Canvas 路徑轉換。
+      # Actions 的 checkout 是暫時工作目錄，所以 Build 後不需要恢復 Canvas。
+      - name: Fix Canvas attachment paths
+        shell: pwsh
+        run: |
+          ./fix-canvas-paths.ps1 `
+            -Target "./content/vault_python_20260816" `
+            -WebVaultRoot "/quartz/vault_python_20260816"
+
       - name: Build Quartz
         run: npx quartz build
 
-      - name: Check Django Canvas output
+      - name: Check Django and PDF output
+        shell: bash
         run: |
           echo "===== Django output ====="
           find public -type f | grep -i "django" || true
 
+          echo "===== PDF output ====="
+          find public -type f | grep -i "\.pdf$" || true
+
           echo "===== Canvas output ====="
-          find public -type f | grep -i "0816_canvas" || true
+          find public -type f | grep -i "\.canvas" || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
