@@ -273,13 +273,28 @@ try {
 
                     $PdfName = [System.IO.Path]::GetFileName($OriginalPath)
 
+                    # Quartz slug：
+                    # 英文字母轉小寫
+                    # 空白轉成 -
+                    $PdfSlug = $PdfName.ToLower() -replace ' ', '-'
+
+                    $PdfDir = [System.IO.Path]::GetDirectoryName($OriginalPath) `
+                        -replace '\', '/'
+
+                    if ($PdfDir) {
+                        $WebPath = "$WebVaultRoot/$PdfDir/$PdfSlug"
+                    }
+                    else {
+                        $WebPath = "$WebVaultRoot/$PdfSlug"
+                    }
+
                     $Node.type = "text"
                     $Node.PSObject.Properties.Remove("file")
 
                     $Node |
                         Add-Member `
                             -NotePropertyName "text" `
-                            -NotePropertyValue "[📄 開啟 PDF：$PdfName]($WebPath)" `
+                            -NotePropertyValue "[開啟 PDF：$PdfName]($WebPath)" `
                             -Force
 
                     $CanvasChanged = $true
