@@ -55,6 +55,9 @@ jobs:
       # ==========================================
       # Patch Canvas attachment paths
       # ==========================================
+      - name: Install Quartz plugins
+        run: npx quartz plugin install
+
       - name: Patch Canvas attachment paths
         shell: pwsh
         run: |
