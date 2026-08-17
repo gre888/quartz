@@ -51,16 +51,14 @@ jobs:
       # /quartz/vault_python_20260816/attch/
       # python-and-django(...).pdf
       # ==========================================
-      - name: Fix Canvas attachment paths
-        shell: pwsh
-        run: |
-          ./fix-canvas-paths.ps1 `
-            -Target "./content/vault_python_20260816" `
-            -WebVaultRoot "/quartz/vault_python_20260816"
 
       # ==========================================
-      # 5. Build Quartz
+      # Patch Canvas attachment paths
       # ==========================================
+      - name: Patch Canvas attachment paths
+        shell: pwsh
+        run: |
+          ./patch-canvas-page.ps1
       - name: Build Quartz
         run: npx quartz build
 
