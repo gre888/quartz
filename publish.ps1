@@ -406,33 +406,101 @@ Write-Host "========================================" -ForegroundColor Green
 
 
 # ==========================================
-# GitHub Actions
+# GitHub Actions：等待本次部署完成
 # ==========================================
 
 Write-Host ""
 Write-Host "GitHub Actions：" -ForegroundColor Cyan
 Write-Host ""
 
-if (Get-Command gh -ErrorAction SilentlyContinue) {
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 
-    gh run list `
+    Write-Host "找不到 gh，無法確認 GitHub Pages 是否部署完成。" -ForegroundColor Red
+    Write-Host "為避免開啟舊版網站，本次不自動開啟網站。" -ForegroundColor Yellow
+
+    Write-Host ""
+    Read-Host "按 Enter 關閉"
+    exit 1
+}
+
+# 取得剛剛 Push 的 commit SHA
+$CommitSHA = (git rev-parse HEAD).Trim()
+
+Write-Host "本次 Commit：" -ForegroundColor Gray
+Write-Host $CommitSHA -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "等待 GitHub Actions 建立本次 Run..." -ForegroundColor Yellow
+
+$RunID = $null
+
+# GitHub 在 push 後可能需要幾秒才建立 Actions Run。
+# 最多查 60 次，每次間隔 2 秒。
+for ($i = 1; $i -le 60; $i++) {
+
+    $RunID = gh run list `
         --workflow "Deploy Quartz to GitHub Pages" `
-        --limit 3
+        --commit $CommitSHA `
+        --limit 1 `
+        --json databaseId `
+        --jq '.[0].databaseId' 2>$null
+
+    if ($LASTEXITCODE -eq 0 -and $RunID) {
+        $RunID = $RunID.Trim()
+        break
+    }
+
+    Start-Sleep -Seconds 2
+}
+
+if (-not $RunID) {
+
+    Write-Host ""
+    Write-Host "找不到本次 Commit 對應的 GitHub Actions Run。" -ForegroundColor Red
+    Write-Host "為避免開啟尚未更新的網站，本次不自動開啟。" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Commit：$CommitSHA" -ForegroundColor Gray
+
+    Read-Host "按 Enter 關閉"
+    exit 1
+}
+
+Write-Host ""
+Write-Host "找到 GitHub Actions Run：" -ForegroundColor Green
+Write-Host "Run ID：$RunID" -ForegroundColor Gray
+Write-Host ""
+Write-Host "等待 GitHub Pages 部署完成..." -ForegroundColor Yellow
+Write-Host ""
+
+# gh run watch 會持續顯示 Actions 狀態。
+# --exit-status：Run 失敗時回傳非 0。
+gh run watch $RunID --exit-status
+
+$ActionResult = $LASTEXITCODE
+
+Write-Host ""
+
+if ($ActionResult -eq 0) {
+
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "        GitHub Pages 部署完成！" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "自動開啟最新 Quartz 網站..." -ForegroundColor Cyan
+
+    Start-Process $Website
 }
 else {
 
-    Write-Host "找不到 gh，略過 Actions 狀態。" -ForegroundColor Yellow
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "        GitHub Actions 部署失敗" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Run ID：$RunID" -ForegroundColor Yellow
+    Write-Host "網站不會自動開啟，以免看到舊版本。" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "可用以下指令查看失敗紀錄：" -ForegroundColor Gray
+    Write-Host "gh run view $RunID --log-failed" -ForegroundColor White
 }
-
-
-# ==========================================
-# Open website automatically
-# ==========================================
-
-Write-Host ""
-Write-Host "自動開啟 Quartz 網站..." -ForegroundColor Cyan
-
-Start-Process $Website
 
 Write-Host ""
 Read-Host "按 Enter 關閉"
