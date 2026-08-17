@@ -1,37 +1,58 @@
 ﻿$ErrorActionPreference = "Stop"
 
 # ==========================================
-# Quartz Canvas Page Patch - Cross Platform
+# Quartz Canvas Page Patch
+# Compiled JS Exact Patch Version
 #
-# Windows 本機：
-#   C:\quartz\quartz\patch-canvas-page.ps1
-#
-# GitHub Actions：
-#   /home/runner/work/quartz/quartz/patch-canvas-page.ps1
-#
-# 使用 $PSScriptRoot 自動取得 Quartz 專案根目錄，
-# 不再寫死 C:\quartz\quartz。
+# 目標：
+# 1. 支援編譯後實際變數 slug2
+# 2. 將 attch/... 補成 vault_python_20260816/attch/...
+# 3. PDF href 強制改成 /quartz/${fileSlug}
+# 4. Patch 後自動驗證，失敗就 exit 1
 # ==========================================
 
 $QuartzRoot = $PSScriptRoot
 
 $Targets = @(
+    (Join-Path $QuartzRoot ".quartz/plugins/canvas-page/dist/components/index.js"),
+    (Join-Path $QuartzRoot ".quartz/plugins/canvas-page/dist/index.js"),
     (Join-Path $QuartzRoot "node_modules/@quartz-community/canvas-page/dist/components/index.js"),
     (Join-Path $QuartzRoot "node_modules/@quartz-community/canvas-page/dist/index.js")
 )
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " Quartz Canvas Page Patch" -ForegroundColor Cyan
+Write-Host " Quartz Canvas Compiled JS Patch" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "QuartzRoot：" -ForegroundColor Gray
 Write-Host $QuartzRoot -ForegroundColor DarkGray
 Write-Host ""
 
-$OldCode = 'const fileSlug = slugifyFilePath(node.file);'
+$PatchedFiles = 0
 
-$NewCode = @'
+foreach ($Target in $Targets) {
+
+    Write-Host "----------------------------------------" -ForegroundColor DarkGray
+    Write-Host "處理：" -ForegroundColor Yellow
+    Write-Host $Target -ForegroundColor Gray
+
+    if (-not (Test-Path $Target)) {
+        Write-Host "找不到檔案。" -ForegroundColor Red
+        exit 1
+    }
+
+    $Content = Get-Content $Target -Raw -Encoding UTF8
+    $OriginalContent = $Content
+
+    # ======================================
+    # Patch A
+    # fileSlug 區塊
+    # ======================================
+
+    $OldOriginal = 'const fileSlug = slugifyFilePath(node.file);'
+
+    $OldPreviousPatch = @'
 const normalizedFile = node.file.replace(/\\/g, "/");
 const rawFileSlug = slugifyFilePath(normalizedFile);
 const vaultRoot = slug.split("/")[0];
@@ -40,107 +61,192 @@ const fileSlug = normalizedFile.startsWith("attch/")
   : rawFileSlug;
 '@
 
-$PatchedCount = 0
+    $NewFileSlugBlock = @'
+const normalizedFile = node.file.replace(/\\/g, "/");
+const rawFileSlug = slugifyFilePath(normalizedFile);
+const vaultRoot = slug2.split("/")[0];
+const fileSlug = normalizedFile.startsWith("attch/")
+  ? `${vaultRoot}/${rawFileSlug}`
+  : rawFileSlug;
+const isPdf = /\.pdf$/i.test(node.file);
+const resolvedFileHref = isPdf
+  ? `/quartz/${fileSlug}`
+  : resolveRelative(slug2, fileSlug);
+'@
 
-foreach ($Target in $Targets) {
+    if ($Content.Contains($OldPreviousPatch)) {
 
-    Write-Host "檢查：" -ForegroundColor Yellow
-    Write-Host $Target -ForegroundColor Gray
+        $Content = $Content.Replace(
+            $OldPreviousPatch,
+            $NewFileSlugBlock
+        )
 
-    if (-not (Test-Path $Target)) {
+        Write-Host "已把舊版 fileSlug Patch 升級為 slug2 + PDF absolute URL。" -ForegroundColor Green
+
+    }
+    elseif ($Content.Contains($OldOriginal)) {
+
+        $Content = $Content.Replace(
+            $OldOriginal,
+            $NewFileSlugBlock
+        )
+
+        Write-Host "已加入 fileSlug + slug2 + PDF absolute URL。" -ForegroundColor Green
+
+    }
+    elseif (
+        $Content.Contains('const vaultRoot = slug2.split("/")[0];') -and
+        $Content.Contains('const resolvedFileHref = isPdf') -and
+        $Content.Contains('? `/quartz/${fileSlug}`')
+    ) {
+
+        Write-Host "fileSlug Patch 已存在。" -ForegroundColor Gray
+
+    }
+    else {
 
         Write-Host ""
-        Write-Host "找不到檔案：" -ForegroundColor Red
-        Write-Host $Target -ForegroundColor Red
-        Write-Host ""
-        Write-Host "列出 canvas-page dist 內容供除錯：" -ForegroundColor Yellow
+        Write-Host "找不到可辨識的 fileSlug 區塊。" -ForegroundColor Red
+        Write-Host "停止，避免誤改。" -ForegroundColor Yellow
 
-        $CanvasDist = Join-Path $QuartzRoot "node_modules/@quartz-community/canvas-page/dist"
-
-        if (Test-Path $CanvasDist) {
-            Get-ChildItem $CanvasDist -Recurse -File |
-                Select-Object FullName
-        }
-        else {
-            Write-Host "連 canvas-page/dist 都不存在。" -ForegroundColor Red
-        }
+        Select-String `
+            -Path $Target `
+            -Pattern "normalizedFile|fileSlug|slugifyFilePath|slug2" `
+            -Context 2,3
 
         exit 1
     }
 
-    $Content = Get-Content $Target -Raw -Encoding UTF8
+    # ======================================
+    # Patch B
+    # 編譯後實際 href：
+    # href: resolveRelative(slug2, fileSlug)
+    # 改成：
+    # href: resolvedFileHref
+    # ======================================
 
-    # 已經 Patch 過則跳過
-    if (
-        $Content.Contains('const normalizedFile = node.file.replace(/\\/g, "/");') -and
-        $Content.Contains('normalizedFile.startsWith("attch/")')
-    ) {
+    $HrefPattern = 'href:\s*resolveRelative\(slug2,\s*fileSlug\)'
 
-        Write-Host "已經 Patch，跳過。" -ForegroundColor Green
-        Write-Host ""
-        continue
+    $HrefCountBefore = ([regex]::Matches(
+        $Content,
+        $HrefPattern
+    )).Count
+
+    if ($HrefCountBefore -gt 0) {
+
+        $Content = [regex]::Replace(
+            $Content,
+            $HrefPattern,
+            'href: resolvedFileHref'
+        )
+
+        Write-Host "已修改 href：$HrefCountBefore 處。" -ForegroundColor Green
+
     }
+    elseif ($Content.Contains('href: resolvedFileHref')) {
 
-    if (-not $Content.Contains($OldCode)) {
+        Write-Host "href Patch 已存在。" -ForegroundColor Gray
+
+    }
+    else {
 
         Write-Host ""
-        Write-Host "找不到預期的原始程式：" -ForegroundColor Red
-        Write-Host $OldCode -ForegroundColor DarkGray
-        Write-Host ""
-        Write-Host "canvas-page 套件內容可能已變更，停止 Patch。" -ForegroundColor Yellow
-
-        # 顯示可能相關的行，方便 GitHub Actions log 除錯
-        Write-Host ""
-        Write-Host "搜尋 fileSlug：" -ForegroundColor Cyan
+        Write-Host "找不到 href: resolveRelative(slug2, fileSlug)。" -ForegroundColor Red
+        Write-Host "停止，避免 Patch 不完整。" -ForegroundColor Yellow
 
         Select-String `
             -Path $Target `
-            -Pattern "fileSlug|slugifyFilePath|resolveRelative" `
+            -Pattern "href:|resolveRelative\(slug2|fileSlug" `
             -Context 1,2
 
         exit 1
     }
 
-    # 本機備份；node_modules 不會進 Git
-    $Backup = "$Target.before-canvas-patch"
+    # ======================================
+    # 寫回
+    # ======================================
 
-    if (-not (Test-Path $Backup)) {
-        Copy-Item $Target $Backup -Force
-        Write-Host "已建立備份：" -ForegroundColor DarkGray
-        Write-Host $Backup -ForegroundColor DarkGray
+    if ($Content -ne $OriginalContent) {
+
+        $Backup = "$Target.before-exact-patch"
+
+        if (-not (Test-Path $Backup)) {
+            Copy-Item $Target $Backup -Force
+        }
+
+        $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+        [System.IO.File]::WriteAllText(
+            $Target,
+            $Content,
+            $Utf8NoBom
+        )
+
+        $PatchedFiles++
+
+        Write-Host "檔案已寫入。" -ForegroundColor Green
+    }
+    else {
+        Write-Host "檔案內容已是目標狀態。" -ForegroundColor Gray
     }
 
-    $NewContent = $Content.Replace($OldCode, $NewCode)
+    # ======================================
+    # Patch 後驗證
+    # ======================================
 
-    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $Verify = Get-Content $Target -Raw -Encoding UTF8
 
-    [System.IO.File]::WriteAllText(
-        $Target,
-        $NewContent,
-        $Utf8NoBom
-    )
+    $Checks = @{
+        "vaultRoot 使用 slug2" =
+            $Verify.Contains('const vaultRoot = slug2.split("/")[0];')
 
-    $PatchedCount++
+        "PDF absolute URL" =
+            $Verify.Contains('? `/quartz/${fileSlug}`')
 
-    Write-Host "Patch 完成。" -ForegroundColor Green
+        "resolvedFileHref 存在" =
+            $Verify.Contains('const resolvedFileHref = isPdf')
+
+        "舊 href 已移除" =
+            -not [regex]::IsMatch(
+                $Verify,
+                'href:\s*resolveRelative\(slug2,\s*fileSlug\)'
+            )
+
+        "新 href 存在" =
+            $Verify.Contains('href: resolvedFileHref')
+    }
+
+    Write-Host ""
+    Write-Host "驗證：" -ForegroundColor Cyan
+
+    $Failed = $false
+
+    foreach ($Name in $Checks.Keys) {
+
+        if ($Checks[$Name]) {
+            Write-Host "  OK  $Name" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  FAIL $Name" -ForegroundColor Red
+            $Failed = $true
+        }
+    }
+
+    if ($Failed) {
+        Write-Host ""
+        Write-Host "Patch 驗證失敗，停止。" -ForegroundColor Red
+        exit 1
+    }
+
     Write-Host ""
 }
 
 Write-Host "========================================" -ForegroundColor Green
-Write-Host " Canvas Patch 完成" -ForegroundColor Green
+Write-Host " Canvas Compiled JS Patch 完成" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-
-if ($PatchedCount -gt 0) {
-    Write-Host "本次修改檔案數：$PatchedCount" -ForegroundColor Green
-}
-else {
-    Write-Host "所有目標檔案都已經 Patch。" -ForegroundColor Gray
-}
-
+Write-Host "修改檔案數：$PatchedFiles" -ForegroundColor Green
 Write-Host ""
-Write-Host "附件規則：" -ForegroundColor Cyan
-Write-Host "attch/xxx.ext" -ForegroundColor Gray
-Write-Host "        ↓"
-Write-Host "vault_python_20260816/attch/<Quartz slug>" -ForegroundColor Gray
+Write-Host "預期 Canvas PDF href：" -ForegroundColor Cyan
+Write-Host '/quartz/vault_python_20260816/attch/python-and-django(...).pdf' -ForegroundColor Gray
 Write-Host ""
