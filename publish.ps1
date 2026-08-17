@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 # ==========================================
 # Obsidian -> Quartz
@@ -438,7 +438,6 @@ $RunID = $null
 for ($i = 1; $i -le 60; $i++) {
 
     $RunID = gh run list `
-        --workflow "Deploy Quartz to GitHub Pages" `
         --commit $CommitSHA `
         --limit 1 `
         --json databaseId `
